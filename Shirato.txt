@@ -1,0 +1,131 @@
+local plr = game.Players.LocalPlayer
+local rs = game:GetService("RunService")
+local uis = game:GetService("UserInputService")
+local cam = workspace.CurrentCamera
+local sg = game:GetService("CoreGui")
+
+repeat task.wait() until game:IsLoaded()
+repeat task.wait() until plr.Character
+
+local state = {
+    esp = false,
+    killaura = false,
+    aura_radius = 18,
+    noclip = false,
+    walkspeed = 16,
+    jumppower = 50,
+}
+
+local function getclosest(rad)
+    local closest, dist = nil, rad or math.huge
+    local mypos = plr.Character and plr.Character.HumanoidRootPart and plr.Character.HumanoidRootPart.Position
+    if not mypos then return nil end
+    for _, p in ipairs(game.Players:GetPlayers()) do
+        if p ~= plr and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+            local hum = p.Character:FindFirstChildOfClass("Humanoid")
+            if hum and hum.Health > 0 then
+                local d = (p.Character.HumanoidRootPart.Position - mypos).Magnitude
+                if d < dist then dist = d; closest = p end
+            end
+        end
+    end
+    return closest
+end
+
+local esp_cache = {}
+
+rs.RenderStepped:Connect(function()
+    pcall(function()
+        if state.killaura then
+            local t = getclosest(state.aura_radius)
+            if t then
+                local tool = plr.Character and plr.Character:FindFirstChildOfClass("Tool")
+                if tool then tool:Activate() end
+            end
+        end
+        if state.esp then
+            for _, p in ipairs(game.Players:GetPlayers()) do
+                if p ~= plr and p.Character and not esp_cache[p] then
+                    local h = Instance.new("Highlight")
+                    h.FillColor = Color3.fromRGB(255, 0, 0)
+                    h.Parent = p.Character
+                    esp_cache[p] = h
+                end
+            end
+        else
+            for p, h in pairs(esp_cache) do
+                pcall(function() h:Destroy() end)
+                esp_cache[p] = nil
+            end
+        end
+        if state.noclip and plr.Character then
+            for _, part in ipairs(plr.Character:GetDescendants()) do
+                if part:IsA("BasePart") then part.CanCollide = false end
+            end
+        end
+        if plr.Character and plr.Character:FindFirstChildOfClass("Humanoid") then
+            plr.Character.Humanoid.WalkSpeed = state.walkspeed
+            plr.Character.Humanoid.JumpPower = state.jumppower
+            plr.Character.Humanoid.UseJumpPower = true
+        end
+    end)
+end)
+
+local gui = Instance.new("ScreenGui")
+gui.ResetOnSpawn = false
+gui.Parent = sg
+
+local main = Instance.new("Frame")
+main.Size = UDim2.new(0, 300, 0, 300)
+main.Position = UDim2.new(0.5, -150, 0.5, -150)
+main.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+main.BorderSizePixel = 0
+main.Active = true
+main.Draggable = true
+main.Parent = gui
+
+local t = Instance.new("TextLabel")
+t.Size = UDim2.new(1, 0, 0, 40)
+t.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+t.Text = "shirato test"
+t.TextColor3 = Color3.fromRGB(255, 255, 255)
+t.Font = Enum.Font.GothamBold
+t.TextSize = 16
+t.Parent = main
+
+local function makebtn(name, key)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(1, -20, 0, 32)
+    b.Position = UDim2.new(0, 10, 0, 50 + (#main:GetChildren() - 2) * 36)
+    b.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+    b.Text = name .. ": off"
+    b.TextColor3 = Color3.fromRGB(255, 255, 255)
+    b.Font = Enum.Font.Gotham
+    b.TextSize = 14
+    b.Parent = main
+    b.MouseButton1Click:Connect(function()
+        state[key] = not state[key]
+        b.Text = name .. ": " .. (state[key] and "on" or "off")
+        b.BackgroundColor3 = state[key] and Color3.fromRGB(80, 30, 30) or Color3.fromRGB(40, 40, 50)
+    end)
+end
+
+local btns = Instance.new("Folder")
+btns.Parent = main
+
+local y = 50
+local function btn(name, key)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(1, -20, 0, 32)
+    b.Position = UDim2.new(0, 10, 0, y)
+    y = y + 36
+    b.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+    b.Text = name .. ": off"
+    b.TextColor3 = Color3.fromRGB(255, 255, 255)
+    b.Font = Enum.Font.Gotham
+    b.TextSize = 14
+    b.Parent = main
+    b.MouseButton1Click:Connect(function()
+        state[key] = not state[key]
+        b.Text = name .. ": " .. (state[key] and "on" or "off")
+        b.BackgroundColor3 = state[key] and Color3.fromRGB(80, 30, 30) or Color3.fromRGB(40,
