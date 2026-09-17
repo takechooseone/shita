@@ -1,0 +1,825 @@
+local plr = game.Players.LocalPlayer
+local rs = game:GetService("RunService")
+local uis = game:GetService("UserInputService")
+local cam = workspace.CurrentCamera
+local sg = game:GetService("CoreGui")
+local lighting = game:GetService("Lighting")
+
+local GUN_TRANSPARENCY = 0.5
+
+repeat task.wait() until game:IsLoaded()
+repeat task.wait() until plr.Character
+repeat task.wait() until plr.Character:FindFirstChild("HumanoidRootPart")
+
+local state = {
+    silent = false,
+    prediction = 0.165,
+    force_shoot = false,
+    auto_shoot = false,
+    killaura = false,
+    aura_radius = 18,
+    aura_delay = 0.1,
+    killall = false,
+    throw_silent = false,
+    throw_prediction = 0.165,
+    grab_gun = false,
+    farm = false,
+    esp = false,
+    esp_role = true,
+    esp_name = true,
+    esp_health = true,
+    esp_distance = true,
+    esp_body = true,
+    gunesp = false,
+    gunesp_color = "white",
+    gunesp_self = true,
+    custom_gun = false,
+    custom_gun_id = "awp",
+    custom_knife = false,
+    custom_knife_id = "katana",
+    shit_hat = false,
+    fog = false,
+    fog_start = 50,
+    fog_end = 200,
+    fog_color = Color3.fromRGB(200, 200, 200),
+    sky = false,
+    sky_color = Color3.fromRGB(100, 100, 100),
+    fullbright = false,
+    noclip = false,
+    walkspeed = 16,
+    jumppower = 50,
+    anti_fling = false,
+    anti_void = false,
+    anti_afk = false,
+    auto_reset = false,
+}
+
+local esp_cache = {}
+local gun_cache = {}
+local hat_cache = {}
+local custom_cache = {}
+local aura_last = 0
+
+local colors = {
+    main = Color3.fromRGB(255, 255, 255),
+    bg = Color3.fromRGB(15, 15, 15),
+    bg2 = Color3.fromRGB(25, 25, 25),
+    bg3 = Color3.fromRGB(35, 35, 35),
+    on = Color3.fromRGB(70, 70, 70),
+    text = Color3.fromRGB(240, 240, 240),
+    textdim = Color3.fromRGB(130, 130, 130),
+}
+
+local gune_colors = {
+    purple = {outline = Color3.fromRGB(220, 220, 220)},
+    white = {outline = Color3.fromRGB(255, 255, 255)},
+    blue = {outline = Color3.fromRGB(160, 160, 160)},
+}
+
+local custom_guns = {
+    awp = {name = "AWP", mesh = "rbxassetid://7024309813", scale = Vector3.new(2.2, 2.2, 4.5), color = Color3.fromRGB(60, 80, 50)},
+    usp = {name = "USP", mesh = "rbxassetid://0", scale = Vector3.new(1, 1, 1.5), color = Color3.fromRGB(50, 50, 50)},
+    g22 = {name = "G22", mesh = "rbxassetid://0", scale = Vector3.new(1, 1, 1.5), color = Color3.fromRGB(30, 30, 30)},
+}
+
+local custom_knives = {
+    katana = {name = "Katana", mesh = "rbxassetid://0", scale = Vector3.new(1.6, 1.6, 3.8), color = Color3.fromRGB(180, 180, 180)},
+    mcsword = {name = "Minecraft Sword", mesh = "rbxassetid://0", scale = Vector3.new(1, 1, 3), color = Color3.fromRGB(140, 140, 140)},
+}
+
+local function is_gun(n)
+    n = n:lower()
+    return n:find("gun") or n:find("pistol") or n:find("revolver") or n:find("luger") or n:find("blaster") or n:find("phaser")
+end
+
+local function is_knife(n)
+    n = n:lower()
+    return n:find("knife") or n:find("dagger") or n:find("blade") or n:find("scythe") or n:find("axe") or n:find("bat") or n:find("saber") or n:find("shard") or n:find("edge") or n:find("bringer") or n:find("fang") or n:find("harvester")
+end
+
+local function is_weapon_name(n)
+    return is_gun(n) or is_knife(n)
+end
+
+local function getrole(p)
+    if not p or not p.Character then return "?", Color3.fromRGB(180, 180, 180) end
+    local tool = p.Character:FindFirstChildOfClass("Tool")
+    if tool then
+        if is_knife(tool.Name) then return "MURDERER", Color3.fromRGB(255, 255, 255) end
+        if is_gun(tool.Name) then return "SHERIFF", Color3.fromRGB(200, 200, 200) end
+    end
+    local ls = p:FindFirstChild("leaderstats")
+    if ls then
+        for _, v in ipairs(ls:GetChildren()) do
+            local val = tostring(v.Value):lower()
+            if val:find("murder") then return "MURDERER", Color3.fromRGB(255, 255, 255) end
+            if val:find("sheriff") then return "SHERIFF", Color3.fromRGB(200, 200, 200) end
+            if val:find("innocent") then return "INNOCENT", Color3.fromRGB(140, 140, 140) end
+        end
+    end
+    return "INNOCENT", Color3.fromRGB(140, 140, 140)
+end
+
+local function getbody(p)
+    if not p or not p.Character then return "unknown" end
+    local hum = p.Character:FindFirstChildOfClass("Humanoid")
+    local rtype = hum and hum.RigType or Enum.HumanoidRigType.R15
+    for _, obj in ipairs(p.Character:GetDescendants()) do
+        if obj:IsA("MeshPart") or obj:IsA("SpecialMesh") then
+            local id = obj.MeshId or ""
+            if id == "" or id == "rbxassetid://0" then
+                if rtype == Enum.HumanoidRigType.R15 then return "r15" end
+                return "classic"
+            end
+            if id:find("bacon") or id:find("2510") then return "bacon" end
+            if id:find("woman") then return "woman" end
+        end
+    end
+    if rtype == Enum.HumanoidRigType.R15 then return "r15" end
+    return "classic"
+end
+
+local function getclosest(rad)
+    local closest, dist = nil, rad or math.huge
+    local mypos = plr.Character and plr.Character.HumanoidRootPart and plr.Character.HumanoidRootPart.Position
+    if not mypos then return nil end
+    for _, p in ipairs(game.Players:GetPlayers()) do
+        if p ~= plr and p.Character then
+            local hrp = p.Character:FindFirstChild("HumanoidRootPart")
+            local hum = p.Character:FindFirstChildOfClass("Humanoid")
+            if hrp and hum and hum.Health > 0 then
+                local d = (hrp.Position - mypos).Magnitude
+                if d < dist then dist = d; closest = p end
+            end
+        end
+    end
+    return closest
+end
+
+local function silentaim()
+    if not state.silent then return end
+    local target = getclosest(500)
+    if target and target.Character and target.Character:FindFirstChild("Head") then
+        local head = target.Character.Head
+        local hrp = target.Character:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            local vel = hrp.AssemblyLinearVelocity or Vector3.new()
+            local dist = (head.Position - cam.CFrame.Position).Magnitude
+            local t = dist / 200
+            local pos = head.Position + vel * t * state.prediction
+            cam.CFrame = CFrame.lookAt(cam.CFrame.Position, pos)
+        end
+    end
+end
+
+local function killaura()
+    if not state.killaura then return end
+    if tick() - aura_last < state.aura_delay then return end
+    aura_last = tick()
+    local target = getclosest(state.aura_radius)
+    if not target then return end
+    local tool = plr.Character and plr.Character:FindFirstChildOfClass("Tool")
+    if tool then pcall(function() tool:Activate() end) end
+end
+
+local function killall()
+    if not state.killall then return end
+    local tool = plr.Character and plr.Character:FindFirstChildOfClass("Tool")
+    if not tool then return end
+    pcall(function()
+        tool:Activate()
+        if tool:FindFirstChild("Swing") then tool.Swing:FireServer() end
+    end)
+end
+
+local function force_shoot_func()
+    if not state.force_shoot then return end
+    local tool = plr.Character and plr.Character:FindFirstChildOfClass("Tool")
+    if not tool then return end
+    if is_gun(tool.Name) then
+        pcall(function() tool:Activate() end)
+    end
+end
+
+local function auto_shoot_func()
+    if not state.auto_shoot then return end
+    local target = getclosest(500)
+    if not target or not target.Character then return end
+    local tool = plr.Character and plr.Character:FindFirstChildOfClass("Tool")
+    if not tool then return end
+    if is_gun(tool.Name) then
+        local head = target.Character:FindFirstChild("Head")
+        if head then
+            cam.CFrame = CFrame.lookAt(cam.CFrame.Position, head.Position)
+            pcall(function() tool:Activate() end)
+        end
+    end
+end
+
+local function throw_silent_func()
+    if not state.throw_silent then return end
+    local target = getclosest(500)
+    if not target or not target.Character then return end
+    local tool = plr.Character and plr.Character:FindFirstChildOfClass("Tool")
+    if not tool then return end
+    if is_knife(tool.Name) then
+        local head = target.Character:FindFirstChild("Head")
+        local hrp = target.Character:FindFirstChild("HumanoidRootPart")
+        if head and hrp then
+            local vel = hrp.AssemblyLinearVelocity or Vector3.new()
+            local dist = (head.Position - cam.CFrame.Position).Magnitude
+            local t = dist / 200
+            local pos = head.Position + vel * t * state.throw_prediction
+            cam.CFrame = CFrame.lookAt(cam.CFrame.Position, pos)
+            pcall(function() tool:Activate() end)
+        end
+    end
+end
+
+local function getweapons()
+    local folder = workspace:FindFirstChild("Weapons") or workspace:FindFirstChild("Ignored")
+    if not folder then return {} end
+    local list = {}
+    for _, g in ipairs(folder:GetChildren()) do
+        if g:FindFirstChild("Handle") then table.insert(list, g) end
+    end
+    return list
+end
+
+local function grab_gun_func()
+    if not state.grab_gun then return end
+    local hrp = plr.Character and plr.Character.HumanoidRootPart
+    if not hrp then return end
+    local weapons = getweapons()
+    if #weapons == 0 then return end
+    local closest, dist = nil, math.huge
+    for _, g in ipairs(weapons) do
+        local d = (g.Handle.Position - hrp.Position).Magnitude
+        if d < dist then dist = d; closest = g end
+    end
+    if closest then
+        hrp.CFrame = CFrame.new(closest.Handle.Position + Vector3.new(0, 3, 0))
+    end
+end
+
+local function farm_func()
+    if not state.farm then return end
+    local hrp = plr.Character and plr.Character.HumanoidRootPart
+    if not hrp then return end
+    local weapons = getweapons()
+    if #weapons == 0 then return end
+    local closest, dist = nil, math.huge
+    for _, g in ipairs(weapons) do
+        local d = (g.Handle.Position - hrp.Position).Magnitude
+        if d < dist then dist = d; closest = g end
+    end
+    if closest then
+        hrp.CFrame = hrp.CFrame + (closest.Handle.Position - hrp.Position).Unit * 5
+    end
+end
+
+local function cleanup_esp(p)
+    local data = esp_cache[p]
+    if data then
+        pcall(function()
+            if data.hl then data.hl:Destroy() end
+            if data.bg then data.bg:Destroy() end
+        end)
+        esp_cache[p] = nil
+    end
+end
+
+local function cleanup_all_esp()
+    for p, _ in pairs(esp_cache) do cleanup_esp(p) end
+end
+
+local function esp()
+    if not state.esp then
+        cleanup_all_esp()
+        return
+    end
+    for _, p in ipairs(game.Players:GetPlayers()) do
+        if p ~= plr and p.Character then
+            local data = esp_cache[p]
+            if not data or not data.hl or not data.hl.Parent or not data.bg or not data.bg.Parent then
+                cleanup_esp(p)
+                local hl = Instance.new("Highlight")
+                hl.FillColor = colors.main
+                hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+                hl.FillTransparency = 0.65
+                hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                hl.Parent = p.Character
+
+                local head = p.Character:FindFirstChild("Head")
+                local bg = nil
+                if head then
+                    bg = Instance.new("BillboardGui")
+                    bg.Size = UDim2.new(0, 260, 0, 100)
+                    bg.StudsOffset = Vector3.new(0, 3, 0)
+                    bg.AlwaysOnTop = true
+                    bg.Parent = head
+
+                    local role = Instance.new("TextLabel")
+                    role.Name = "role"
+                    role.Size = UDim2.new(1, 0, 0, 22)
+                    role.BackgroundTransparency = 1
+                    role.TextColor3 = Color3.fromRGB(255, 255, 255)
+                    role.TextStrokeTransparency = 0
+                    role.Font = Enum.Font.GothamBold
+                    role.TextSize = 15
+                    role.Text = "?"
+                    role.Parent = bg
+
+                    local nm = Instance.new("TextLabel")
+                    nm.Name = "nm"
+                    nm.Size = UDim2.new(1, 0, 0, 20)
+                    nm.Position = UDim2.new(0, 0, 0, 22)
+                    nm.BackgroundTransparency = 1
+                    nm.TextColor3 = Color3.fromRGB(255, 255, 255)
+                    nm.TextStrokeTransparency = 0
+                    nm.Font = Enum.Font.Gotham
+                    nm.TextSize = 13
+                    nm.Text = p.Name
+                    nm.Parent = bg
+
+                    local hpl = Instance.new("TextLabel")
+                    hpl.Name = "hp"
+                    hpl.Size = UDim2.new(1, 0, 0, 18)
+                    hpl.Position = UDim2.new(0, 0, 0, 42)
+                    hpl.BackgroundTransparency = 1
+                    hpl.TextColor3 = Color3.fromRGB(255, 255, 255)
+                    hpl.TextStrokeTransparency = 0
+                    hpl.Font = Enum.Font.Gotham
+                    hpl.TextSize = 12
+                    hpl.Parent = bg
+
+                    local bl = Instance.new("TextLabel")
+                    bl.Name = "body"
+                    bl.Size = UDim2.new(1, 0, 0, 18)
+                    bl.Position = UDim2.new(0, 0, 0, 60)
+                    bl.BackgroundTransparency = 1
+                    bl.TextColor3 = Color3.fromRGB(200, 200, 200)
+                    bl.TextStrokeTransparency = 0
+                    bl.Font = Enum.Font.Gotham
+                    bl.TextSize = 12
+                    bl.Parent = bg
+
+                    local dl = Instance.new("TextLabel")
+                    dl.Name = "dl"
+                    dl.Size = UDim2.new(1, 0, 0, 18)
+                    dl.Position = UDim2.new(0, 0, 0, 78)
+                    dl.BackgroundTransparency = 1
+                    dl.TextColor3 = Color3.fromRGB(200, 200, 200)
+                    dl.TextStrokeTransparency = 0
+                    dl.Font = Enum.Font.Gotham
+                    dl.TextSize = 12
+                    dl.Parent = bg
+                end
+                esp_cache[p] = {hl = hl, bg = bg}
+                data = esp_cache[p]
+            end
+            if data and data.bg and data.hl and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+                local hum = p.Character:FindFirstChildOfClass("Humanoid")
+                local hrp = p.Character:FindFirstChild("HumanoidRootPart")
+                if hum and hrp then
+                    local dist = (hrp.Position - plr.Character.HumanoidRootPart.Position).Magnitude
+                    local roletext, rolecolor = getrole(p)
+                    local bodytext = getbody(p)
+                    local role = data.bg:FindFirstChild("role")
+                    local nm = data.bg:FindFirstChild("nm")
+                    local hpl = data.bg:FindFirstChild("hp")
+                    local bl = data.bg:FindFirstChild("body")
+                    local dl = data.bg:FindFirstChild("dl")
+                    if role then
+                        role.Text = state.esp_role and roletext or ""
+                        role.TextColor3 = rolecolor
+                    end
+                    if nm then nm.Text = state.esp_name and p.Name or "" end
+                    if hpl then hpl.Text = state.esp_health and string.format("hp: %d", math.floor(hum.Health)) or "" end
+                    if bl then bl.Text = state.esp_body and ("body: " .. bodytext) or "" end
+                    if dl then dl.Text = state.esp_distance and string.format("%d studs", math.floor(dist)) or "" end
+                    if data.hl then data.hl.FillColor = rolecolor end
+                end
+            end
+        end
+    end
+    for p, data in pairs(esp_cache) do
+        if not p.Character or not p.Character.Parent then cleanup_esp(p) end
+    end
+end
+
+local function cleanup_gun(tool)
+    local data = gun_cache[tool]
+    if data then
+        pcall(function()
+            if data.hl then data.hl:Destroy() end
+            if data.bg then data.bg:Destroy() end
+            if data.parts then
+                for part, orig in pairs(data.parts) do
+                    if part and part.Parent then part.Transparency = orig end
+                end
+            end
+        end)
+        gun_cache[tool] = nil
+    end
+end
+
+local function cleanup_all_gun()
+    for tool, _ in pairs(gun_cache) do cleanup_gun(tool) end
+end
+
+local function set_gun_transparent(tool, data, theme, p)
+    for _, obj in ipairs(tool:GetDescendants()) do
+        if obj:IsA("BasePart") then
+            if not data.parts[obj] then data.parts[obj] = obj.Transparency end
+            obj.Transparency = math.max(data.parts[obj], GUN_TRANSPARENCY)
+            obj.CanCollide = false
+        end
+    end
+end
+
+local function gunesp()
+    if not state.gunesp then
+        cleanup_all_gun()
+        return
+    end
+    local theme = gune_colors[state.gunesp_color] or gune_colors.white
+    for _, p in ipairs(game.Players:GetPlayers()) do
+        if (p ~= plr or state.gunesp_self) and p.Character then
+            local tool = p.Character:FindFirstChildOfClass("Tool")
+            if tool then
+                local n = tool.Name
+                local weapon = is_weapon_name(n)
+                local handle = tool:FindFirstChild("Handle")
+                if handle and weapon then
+                    local data = gun_cache[tool]
+                    if not data or not data.hl or not data.hl.Parent then
+                        cleanup_gun(tool)
+                        local hl = Instance.new("Highlight")
+                        hl.FillTransparency = 1
+                        hl.OutlineColor = theme.outline
+                        hl.OutlineTransparency = 0
+                        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                        hl.Adornee = tool
+                        hl.Parent = tool
+
+                        local bg = Instance.new("BillboardGui")
+                        bg.Size = UDim2.new(0, 180, 0, 20)
+                        bg.StudsOffset = Vector3.new(0, 1.5, 0)
+                        bg.AlwaysOnTop = true
+                        bg.Parent = handle
+
+                        local lbl = Instance.new("TextLabel")
+                        lbl.Size = UDim2.new(1, 0, 1, 0)
+                        lbl.BackgroundTransparency = 1
+                        lbl.TextStrokeTransparency = 0
+                        lbl.Font = Enum.Font.GothamBold
+                        lbl.TextSize = 13
+                        lbl.TextColor3 = theme.outline
+                        lbl.Text = (p == plr and "you" or p.Name) .. " | " .. tool.Name
+                        lbl.Parent = bg
+
+                        gun_cache[tool] = {hl = hl, bg = bg, parts = {}}
+                        data = gun_cache[tool]
+                    else
+                        if data.hl then data.hl.OutlineColor = theme.outline end
+                        if data.bg and data.bg:FindFirstChildOfClass("TextLabel") then
+                            data.bg:FindFirstChildOfClass("TextLabel").TextColor3 = theme.outline
+                        end
+                    end
+                    set_gun_transparent(tool, data, theme, p)
+                end
+            end
+        end
+    end
+    for tool, data in pairs(gun_cache) do
+        if not tool or not tool.Parent then cleanup_gun(tool) end
+    end
+end
+
+local function cleanup_hat(p)
+    local data = hat_cache[p]
+    if data then
+        pcall(function()
+            if data.hat then data.hat:Destroy() end
+            if data.weld then data.weld:Destroy() end
+        end)
+        hat_cache[p] = nil
+    end
+end
+
+local function cleanup_all_hat()
+    for p, _ in pairs(hat_cache) do cleanup_hat(p) end
+end
+
+local function addhat(p)
+    if not p.Character then return end
+    local head = p.Character:FindFirstChild("Head")
+    if not head then return end
+    local data = hat_cache[p]
+    if data and data.hat and data.hat.Parent then return end
+    cleanup_hat(p)
+    local hat = Instance.new("Part")
+    hat.Name = "shit_hat"
+    hat.Shape = Enum.PartType.Ball
+    hat.Size = Vector3.new(3.2, 1.6, 3.2)
+    hat.Color = Color3.fromRGB(220, 220, 220)
+    hat.Material = Enum.Material.Neon
+    hat.CanCollide = false
+    hat.Massless = true
+    hat.Transparency = 0.15
+    hat.Parent = p.Character
+    local weld = Instance.new("WeldConstraint")
+    weld.Part0 = head
+    weld.Part1 = hat
+    weld.Parent = hat
+    hat.CFrame = head.CFrame * CFrame.new(0, 1.4, 0)
+    hat_cache[p] = {hat = hat, weld = weld}
+end
+
+local function shit_hat()
+    if not state.shit_hat then
+        cleanup_all_hat()
+        return
+    end
+    for _, p in ipairs(game.Players:GetPlayers()) do
+        if p.Character then
+            addhat(p)
+        end
+    end
+end
+
+local function cleanup_custom(tool)
+    local data = custom_cache[tool]
+    if data then
+        pcall(function()
+            if data.mesh and data.mesh.Parent then
+                data.mesh.MeshId = data.origmesh
+                data.mesh.Scale = data.origscale
+            end
+            if data.handle and data.handle.Parent then
+                data.handle.Color = data.origcol
+            end
+        end)
+        custom_cache[tool] = nil
+    end
+end
+
+local function cleanup_all_custom()
+    for tool, _ in pairs(custom_cache) do cleanup_custom(tool) end
+end
+
+local function apply_custom(tool, theme)
+    local handle = tool:FindFirstChild("Handle")
+    if not handle then return end
+    local mesh = handle:FindFirstChildOfClass("SpecialMesh") or handle:FindFirstChildOfClass("Mesh")
+    if not mesh then return end
+    if not custom_cache[tool] then
+        custom_cache[tool] = {
+            mesh = mesh,
+            origmesh = mesh.MeshId,
+            origscale = mesh.Scale,
+            handle = handle,
+            origcol = handle.Color,
+        }
+    end
+    if theme.mesh and theme.mesh ~= "rbxassetid://0" then
+        mesh.MeshId = theme.mesh
+    end
+    mesh.Scale = theme.scale
+    handle.Color = theme.color
+end
+
+local function custom_gun_func()
+    if not state.custom_gun then return end
+    local theme = custom_guns[state.custom_gun_id] or custom_guns.awp
+    for _, p in ipairs(game.Players:GetPlayers()) do
+        if p ~= plr and p.Character then
+            local tool = p.Character:FindFirstChildOfClass("Tool")
+            if tool and is_gun(tool.Name) then
+                apply_custom(tool, theme)
+            end
+        end
+    end
+end
+
+local function custom_knife_func()
+    if not state.custom_knife then return end
+    local theme = custom_knives[state.custom_knife_id] or custom_knives.katana
+    for _, p in ipairs(game.Players:GetPlayers()) do
+        if p ~= plr and p.Character then
+            local tool = p.Character:FindFirstChildOfClass("Tool")
+            if tool and is_knife(tool.Name) then
+                apply_custom(tool, theme)
+            end
+        end
+    end
+end
+
+local function world_fog()
+    if state.fog then
+        lighting.FogStart = state.fog_start
+        lighting.FogEnd = state.fog_end
+        lighting.FogColor = state.fog_color
+    else
+        lighting.FogStart = 0
+        lighting.FogEnd = 100000
+    end
+end
+
+local sky_obj = nil
+
+local function world_sky()
+    if state.sky then
+        if not sky_obj or not sky_obj.Parent then
+            sky_obj = Instance.new("Sky")
+            sky_obj.Parent = lighting
+        end
+        sky_obj.SkyboxBk = ""
+        sky_obj.SkyboxDn = ""
+        sky_obj.SkyboxFt = ""
+        sky_obj.SkyboxLf = ""
+        sky_obj.SkyboxRt = ""
+        sky_obj.SkyboxUp = ""
+        lighting.OutdoorAmbient = state.sky_color
+        lighting.Ambient = state.sky_color
+        lighting.Brightness = 1
+    else
+        if sky_obj and sky_obj.Parent then
+            sky_obj:Destroy()
+            sky_obj = nil
+        end
+    end
+end
+
+local function fullbright()
+    if state.fullbright and not state.sky then
+        lighting.Ambient = Color3.fromRGB(200, 200, 200)
+        lighting.Brightness = 2
+        lighting.ClockTime = 12
+        lighting.FogEnd = 100000
+        lighting.GlobalShadows = false
+    end
+end
+
+local function noclip()
+    if not state.noclip then return end
+    if plr.Character then
+        for _, p in ipairs(plr.Character:GetDescendants()) do
+            if p:IsA("BasePart") then p.CanCollide = false end
+        end
+    end
+end
+
+local function antifling()
+    if not state.anti_fling then return end
+    if plr.Character then
+        local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
+        if hrp and hrp.AssemblyLinearVelocity.Magnitude > 200 then
+            hrp.AssemblyLinearVelocity = Vector3.new()
+            hrp.AssemblyAngularVelocity = Vector3.new()
+        end
+    end
+end
+
+local function antivoid()
+    if not state.anti_void then return end
+    if plr.Character then
+        local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
+        if hrp and hrp.Position.Y < -50 then hrp.CFrame = CFrame.new(0, 50, 0) end
+    end
+end
+
+local function applyspeed()
+    if plr.Character and plr.Character:FindFirstChildOfClass("Humanoid") then
+        plr.Character.Humanoid.WalkSpeed = state.walkspeed
+        plr.Character.Humanoid.JumpPower = state.jumppower
+        plr.Character.Humanoid.UseJumpPower = true
+    end
+end
+
+plr.CharacterAdded:Connect(function()
+    task.wait(1)
+    applyspeed()
+    cleanup_all_esp()
+    cleanup_all_gun()
+    cleanup_all_hat()
+    cleanup_all_custom()
+    if state.auto_reset then
+        task.wait(0.5)
+        plr.Character:BreakJoints()
+    end
+end)
+
+game.Players.PlayerRemoving:Connect(function(p)
+    cleanup_esp(p)
+    cleanup_hat(p)
+end)
+
+rs.RenderStepped:Connect(function()
+    pcall(silentaim)
+    pcall(killaura)
+    pcall(killall)
+    pcall(force_shoot_func)
+    pcall(auto_shoot_func)
+    pcall(throw_silent_func)
+    pcall(grab_gun_func)
+    pcall(farm_func)
+    pcall(esp)
+    pcall(gunesp)
+    pcall(shit_hat)
+    pcall(custom_gun_func)
+    pcall(custom_knife_func)
+    pcall(world_fog)
+    pcall(world_sky)
+    pcall(fullbright)
+    pcall(noclip)
+    pcall(antifling)
+    pcall(antivoid)
+end)
+
+task.spawn(function()
+    while task.wait(60) do
+        if state.anti_afk then
+            local vu = game:GetService("VirtualUser")
+            vu:CaptureController()
+            vu:ClickButton2(Vector2.new(0, 0))
+        end
+    end
+end)
+
+local gui = Instance.new("ScreenGui")
+gui.Name = "zitrex_ui"
+gui.ResetOnSpawn = false
+gui.Parent = sg
+
+local main = Instance.new("Frame")
+main.Size = UDim2.new(0, 620, 0, 480)
+main.Position = UDim2.new(0.5, -310, 0.5, -240)
+main.BackgroundColor3 = colors.bg
+main.BorderSizePixel = 0
+main.Active = true
+main.Draggable = true
+main.Parent = gui
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 0)
+corner.Parent = main
+
+local stroke = Instance.new("UIStroke")
+stroke.Color = Color3.fromRGB(60, 60, 60)
+stroke.Thickness = 1
+stroke.Parent = main
+
+local topbar = Instance.new("Frame")
+topbar.Size = UDim2.new(1, 0, 0, 40)
+topbar.BackgroundColor3 = colors.bg
+topbar.BorderSizePixel = 0
+topbar.Parent = main
+
+local logolbl = Instance.new("TextLabel")
+logolbl.Size = UDim2.new(0, 60, 1, 0)
+logolbl.BackgroundTransparency = 1
+logolbl.Text = "S"
+logolbl.TextColor3 = Color3.fromRGB(255, 255, 255)
+logolbl.Font = Enum.Font.GothamBold
+logolbl.TextSize = 28
+logolbl.Parent = topbar
+
+local searchbtn = Instance.new("TextButton")
+searchbtn.Size = UDim2.new(0, 30, 0, 30)
+searchbtn.Position = UDim2.new(1, -80, 0, 5)
+searchbtn.BackgroundTransparency = 1
+searchbtn.Text = "🔍"
+searchbtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+searchbtn.Font = Enum.Font.GothamBold
+searchbtn.TextSize = 16
+searchbtn.Parent = topbar
+
+local closebtn = Instance.new("TextButton")
+closebtn.Size = UDim2.new(0, 30, 0, 30)
+closebtn.Position = UDim2.new(1, -40, 0, 5)
+closebtn.BackgroundTransparency = 1
+closebtn.Text = "×"
+closebtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+closebtn.Font = Enum.Font.GothamBold
+closebtn.TextSize = 22
+closebtn.Parent = topbar
+
+local sidebar = Instance.new("Frame")
+sidebar.Size = UDim2.new(0, 180, 1, -40)
+sidebar.Position = UDim2.new(0, 0, 0, 40)
+sidebar.BackgroundColor3 = colors.bg
+sidebar.BorderSizePixel = 0
+sidebar.Parent = main
+
+local sidestroke = Instance.new("UIStroke")
+sidestroke.Color = Color3.fromRGB(40, 40, 40)
+sidestroke.Thickness = 1
+sidestroke.Parent = sidebar
+
+local profile = Instance.new("Frame")
+profile.Size = UDim2.new(1, 0, 0, 80)
+profile.Position = UDim2.new(0, 0, 1, -80)
+profile.BackgroundColor3 = colors.bg
+profile.BorderSizePixel
